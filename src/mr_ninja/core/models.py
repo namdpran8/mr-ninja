@@ -39,7 +39,9 @@ class Severity(str, enum.Enum):
             Severity.INFO: 4,
         }[self]
 
-    def __lt__(self, other: "Severity") -> bool:
+    def __lt__(self, other: str) -> bool:
+        if not isinstance(other, Severity):
+            return NotImplemented
         return self.rank < other.rank
 
 
@@ -78,7 +80,7 @@ class FileEntry(BaseModel):
     diff_content: str = Field("", description="Diff text content")
     language: str = Field("", description="Detected programming language")
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def churn(self) -> int:
         """Total lines changed (additions + deletions)."""
@@ -99,12 +101,12 @@ class Chunk(BaseModel):
         description="Which specialist agent should process this chunk",
     )
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def file_count(self) -> int:
         return len(self.files)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def file_paths(self) -> list[str]:
         return [f.path for f in self.files]
@@ -144,7 +146,7 @@ class ChunkPlan(BaseModel):
         description="Files skipped (generated/lock files)",
     )
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def chunk_count(self) -> int:
         return len(self.chunks)
@@ -237,7 +239,7 @@ class AnalysisReport(BaseModel):
         default_factory=lambda: datetime.now(timezone.utc)
     )
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def severity_counts(self) -> dict[str, int]:
         counts: dict[str, int] = {}
@@ -245,22 +247,22 @@ class AnalysisReport(BaseModel):
             counts[f.severity.value] = counts.get(f.severity.value, 0) + 1
         return counts
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def critical_count(self) -> int:
         return self.severity_counts.get("CRITICAL", 0)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def high_count(self) -> int:
         return self.severity_counts.get("HIGH", 0)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def medium_count(self) -> int:
         return self.severity_counts.get("MEDIUM", 0)
 
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def low_count(self) -> int:
         return self.severity_counts.get("LOW", 0)
