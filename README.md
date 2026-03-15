@@ -278,7 +278,7 @@ print(f"Findings: {len(report.findings)}")
 ## Development
 
 ```bash
-git clone https://github.com/your-username/mr-ninja.git
+git clone https://github.com/namdpran8/mr-ninja.git
 cd mr-ninja
 pip install -e ".[dev]"
 
