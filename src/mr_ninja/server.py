@@ -10,7 +10,7 @@ Provides REST endpoints to:
 
 Start the server:
     mr-ninja serve
-    uvicorn mr_ninja.server:app --host 0.0.0.0 --port 8000 --reload
+    uvicorn mr_ninja.server:app --host 127.0.0.1 --port 8000 --reload
 """
 
 from __future__ import annotations
@@ -187,7 +187,7 @@ def main():
     """Run the FastAPI server via uvicorn."""
     import uvicorn
 
-    host = os.getenv("MR_NINJA_HOST", "0.0.0.0")
+    host = os.getenv("MR_NINJA_HOST", "127.0.0.1")
     port = int(os.getenv("MR_NINJA_PORT", "8000"))
 
     logger.info(f"Starting Mr Ninja server on {host}:{port}")
