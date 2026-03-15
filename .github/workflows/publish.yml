@@ -1,0 +1,74 @@
+# Publish to PyPI when a version tag (v*.*.*) is pushed.
+#
+# Uses PyPI Trusted Publishing (OIDC) — no API token needed.
+# Setup: go to https://pypi.org/manage/project/mr-ninja/settings/publishing/
+# and add a new "GitHub Actions" publisher with:
+#   - Owner: namdpran8
+#   - Repository: mr-ninja
+#   - Workflow: publish.yml
+#   - Environment: pypi
+
+name: Publish to PyPI
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # Run tests before publishing to make sure the tag is good
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -e ".[dev]" --quiet
+      - name: Run test suite
+        run: |
+          python -m pytest tests/ -v \
+            --tb=short \
+            --cov=mr_ninja \
+            --cov-report=term-missing
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install build --quiet
+      - name: Build sdist and wheel
+        run: python -m build
+      - name: Verify package
+        run: |
+          pip install twine --quiet
+          twine check dist/*
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 30
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: build
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
