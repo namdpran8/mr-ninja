@@ -4,7 +4,7 @@
 *.swp
 .DS_Store
 Thumbs.db
-
+baseline_test_results.txt
 
 
 # --- Python ---
@@ -65,3 +65,12 @@ tmpclaude-9a52-cwd
 tmpclaude-4e2b-cwd
 tmpclaude-eb4c-cwd
 tmpclaude-eb95-cwd
+
+# Deleted legacy root-level directories (package lives in src/mr_ninja/)
+/agents/
+/core/
+/demo/
+/flows/
+/gitlab/
+/app.py
+/test.py

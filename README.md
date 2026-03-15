@@ -15,10 +15,13 @@ pip install mr-ninja
 Or from source:
 
 ```bash
-git clone https://gitlab.com/your-group/mr-ninja.git
+git clone https://github.com/your-username/mr-ninja.git
 cd mr-ninja
 pip install -e ".[dev]"
 ```
+
+> **Note:** PyPI publishing is not yet configured.
+> Install from source with `pip install -e ".[dev]"`.
 
 ## Quick Start
 
@@ -57,9 +60,9 @@ mr-ninja demo --files 512 -o report.md
 
 ```bash
 mr-ninja serve
-mr-ninja serve --host 127.0.0.1 --port 9000
+mr-ninja serve --host 127.0.0.1 --port 9000  # custom port example
 
-# Then call the API
+# Then call the API (default port is 8000)
 curl -X POST http://localhost:8000/analyze \
   -H "Content-Type: application/json" \
   -d '{"mr_url": "https://gitlab.com/group/project/-/merge_requests/42", "gitlab_token": "glpat-xxx"}'
@@ -164,40 +167,47 @@ Recommendation: BLOCK MERGE -- resolve all CRITICAL findings before merging.
 
 ```
 mr-ninja/
-|-- src/mr_ninja/
-|   |-- __init__.py              # Package version
-|   |-- __main__.py              # python -m mr_ninja support
-|   |-- cli.py                   # CLI entrypoint (analyze, demo, serve)
-|   |-- server.py                # FastAPI REST API
-|   |-- agents/
-|   |   |-- orchestrator.py      # Central coordinator
-|   |   |-- chunk_planner.py     # MR diff -> chunk plan
-|   |   |-- chunk_processor.py   # Specialist agent runner
-|   |   |-- summarizer.py        # Cross-chunk context manager
-|   |   +-- aggregator.py        # Findings deduplication & report
-|   |-- core/
-|   |   |-- models.py            # Pydantic data models
-|   |   |-- token_estimator.py   # Token count estimation engine
-|   |   +-- chunking_engine.py   # File classification & bin-packing
-|   |-- gitlab/
-|   |   +-- gitlab_client.py     # GitLab REST API connector (stdlib only)
-|   |-- demo/
-|   |   |-- simulate_large_mr.py # MR simulation & analysis
-|   |   +-- generate_large_repo.py
-|   +-- flows/
-|       +-- agent_flow.yaml      # Pipeline flow definition
-|-- tests/
-|   |-- test_token_estimator.py
-|   |-- test_chunking.py
-|   |-- test_aggregation.py
-|   +-- test_orchestrator.py
-|-- pyproject.toml               # Package config & tool settings
-|-- Dockerfile
-|-- .gitlab-ci.yml               # CI/CD pipeline
-|-- AGENTS.md                    # GitLab Duo agent rules
-|-- CONTRIBUTING.md              # Development & publishing guide
-|-- LICENSE                      # MIT
-+-- README.md
+├── src/mr_ninja/              # Installable package
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── cli.py                 # CLI: analyze, demo, serve
+│   ├── server.py              # FastAPI REST API
+│   ├── agents/
+│   │   ├── orchestrator.py    # Central coordinator
+│   │   ├── chunk_planner.py   # MR diff → chunk plan
+│   │   ├── chunk_processor.py # Specialist agent runner
+│   │   ├── summarizer.py      # Cross-chunk context manager
+│   │   └── aggregator.py      # Findings dedup & report
+│   ├── core/
+│   │   ├── models.py          # Pydantic data models
+│   │   ├── token_estimator.py # Token count estimation
+│   │   └── chunking_engine.py # File classification & bin-packing
+│   ├── gitlab/
+│   │   └── gitlab_client.py   # GitLab REST API client (stdlib only)
+│   ├── demo/
+│   │   ├── simulate_large_mr.py
+│   │   └── generate_large_repo.py
+│   └── flows/
+│       └── agent_flow.yaml
+├── tests/
+│   ├── test_token_estimator.py
+│   ├── test_chunking.py
+│   ├── test_aggregation.py
+│   ├── test_orchestrator.py
+│   ├── test_cli.py
+│   ├── test_gitlab_client.py
+│   ├── test_demo.py
+│   └── test_models.py
+├── public/                    # Static website (GitHub Pages)
+├── docs/                      # Architecture and demo guides
+├── scripts/                   # run_demo.sh / run_demo.ps1
+├── .github/workflows/ci.yml   # GitHub Actions CI/CD
+├── pyproject.toml
+├── Dockerfile
+├── AGENTS.md
+├── CONTRIBUTING.md
+├── LICENSE                    # Apache 2.0
+└── README.md
 ```
 
 ---
@@ -268,7 +278,7 @@ print(f"Findings: {len(report.findings)}")
 ## Development
 
 ```bash
-git clone https://gitlab.com/your-group/mr-ninja.git
+git clone https://github.com/your-username/mr-ninja.git
 cd mr-ninja
 pip install -e ".[dev]"
 
@@ -297,7 +307,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for packaging, publishing, and release gu
 | API Framework | FastAPI |
 | Data Models | Pydantic v2 |
 | HTTP Client | urllib (stdlib -- zero dependencies) |
-| CI/CD | GitLab CI |
+| CI/CD | GitHub Actions |
 | Container | Docker |
 | Testing | pytest + pytest-cov |
 
