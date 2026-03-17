@@ -46,20 +46,20 @@ class TestAnalyzeEndpoint:
         assert "mr_url" in resp.json()["detail"] or "project_id" in resp.json()["detail"]
 
     def test_successful_analyze(self, client):
-        from mr_ninja.core.models import AnalyzeResponse
-        mock_response = AnalyzeResponse(
-            status="ok",
-            mr_id="42",
-            chunks_processed=2,
-            total_findings=5,
-            critical_findings=1,
-            overall_risk="HIGH",
-            report_markdown="# Report",
-            processing_time_seconds=1.5,
-        )
+        from mr_ninja.core.models import AnalysisReport, Severity
+        mock_report = MagicMock(spec=AnalysisReport)
+        mock_report.mr_id = "42"
+        mock_report.mr_title = "Test MR"
+        mock_report.chunks_processed = 2
+        mock_report.findings = [MagicMock()] * 5
+        mock_report.critical_count = 1
+        mock_report.overall_risk = Severity.HIGH
+        mock_report.processing_time_seconds = 1.5
+
         with patch("mr_ninja.server.Orchestrator") as MockOrch:
             instance = MockOrch.return_value
-            instance.analyze_request.return_value = mock_response
+            instance.analyze_from_url.return_value = mock_report
+            instance.aggregator.render_markdown.return_value = "# Report"
             resp = client.post("/analyze", json={
                 "mr_url": "https://gitlab.com/g/p/-/merge_requests/42",
                 "gitlab_token": "fake-token",
@@ -72,14 +72,9 @@ class TestAnalyzeEndpoint:
         assert data["total_findings"] == 5
 
     def test_error_response_returns_500(self, client):
-        from mr_ninja.core.models import AnalyzeResponse
-        mock_response = AnalyzeResponse(
-            status="error",
-            error="Something went wrong",
-        )
         with patch("mr_ninja.server.Orchestrator") as MockOrch:
             instance = MockOrch.return_value
-            instance.analyze_request.return_value = mock_response
+            instance.analyze_from_url.side_effect = RuntimeError("Something went wrong")
             resp = client.post("/analyze", json={
                 "mr_url": "https://gitlab.com/g/p/-/merge_requests/42",
                 "gitlab_token": "fake-token",

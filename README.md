@@ -43,6 +43,27 @@ mr-ninja analyze https://gitlab.com/group/project/-/merge_requests/42 --post-com
 mr-ninja analyze https://gitlab.com/group/project/-/merge_requests/42 -o report.md
 ```
 
+### Analyze a GitHub PR
+
+```bash
+export GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxx"
+
+# Analyze by URL
+mr-ninja analyze https://github.com/owner/repo/pull/42
+
+# Post results as a PR comment
+mr-ninja analyze https://github.com/owner/repo/pull/42 --post-comment
+
+# Using fields instead of URL
+mr-ninja analyze --project owner/repo --mr 42 --github-token ghp-xxx
+
+# REST API
+curl -X POST http://localhost:8000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"mr_url": "https://github.com/owner/repo/pull/42",
+       "github_token": "ghp_xxx"}'
+```
+
 ### Run a Demo (No GitLab Required)
 
 ```bash

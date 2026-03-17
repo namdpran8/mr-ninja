@@ -22,6 +22,7 @@ from typing import Optional
 from mr_ninja.core.chunking_engine import ChunkingEngine
 from mr_ninja.core.models import ChunkPlan, FileEntry
 from mr_ninja.core.token_estimator import TokenEstimator
+from mr_ninja.github.github_client import GitHubClient
 from mr_ninja.gitlab.gitlab_client import GitLabClient
 
 logger = logging.getLogger("mr_ninja.chunk_planner")
@@ -43,10 +44,12 @@ class ChunkPlanner:
     def __init__(
         self,
         gitlab_client: Optional[GitLabClient] = None,
+        github_client: Optional[GitHubClient] = None,
         chunking_engine: Optional[ChunkingEngine] = None,
         token_estimator: Optional[TokenEstimator] = None,
     ):
         self.gitlab = gitlab_client or GitLabClient()
+        self.github = github_client
         self.engine = chunking_engine or ChunkingEngine()
         self.estimator = token_estimator or TokenEstimator()
 
@@ -99,6 +102,96 @@ class ChunkPlanner:
         )
 
         return plan
+
+    def plan_from_github_pr(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+    ) -> ChunkPlan:
+        """Build a chunk plan from a live GitHub pull request.
+
+        Fetches PR metadata and changed files, converts them to
+        FileEntry objects, and runs the chunking engine.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            pr_number: Pull request number.
+
+        Returns:
+            Complete ChunkPlan ready for the orchestrator.
+
+        Raises:
+            RuntimeError: If no GitHub client has been configured.
+        """
+        if self.github is None:
+            raise RuntimeError("GitHub client not configured")
+
+        start = time.time()
+        logger.info(f"Planning chunks for {owner}/{repo} PR #{pr_number}")
+
+        # Fetch PR metadata
+        pr = self.github.get_pull_request(owner, repo, pr_number)
+        pr_title = pr.get("title", f"PR #{pr_number}")
+        pr_url = pr.get("html_url", "")
+
+        # Fetch all changed files (paginated)
+        raw_files = self.github.get_all_pull_request_files(
+            owner, repo, pr_number
+        )
+        logger.info(f"Fetched {len(raw_files)} changed files")
+
+        # Convert to FileEntry objects
+        files = self._github_files_to_entries(raw_files)
+
+        # Run the chunking engine
+        plan = self.engine.create_plan(
+            files=files,
+            mr_id=str(pr_number),
+            mr_title=pr_title,
+            mr_url=pr_url,
+            project_id=f"{owner}/{repo}",
+        )
+
+        elapsed = time.time() - start
+        logger.info(
+            f"Chunk plan ready in {elapsed:.2f}s: "
+            f"{plan.chunk_count} chunk(s), "
+            f"{plan.total_estimated_tokens:,} tokens"
+        )
+
+        return plan
+
+    def _github_files_to_entries(
+        self, files: list[dict]
+    ) -> list[FileEntry]:
+        """Convert GitHub PR file dicts into typed FileEntry objects.
+
+        GitHub uses ``filename`` and ``patch`` fields, unlike GitLab's
+        ``new_path`` and ``diff``.
+        """
+        entries: list[FileEntry] = []
+
+        for f in files:
+            path = f.get("filename", "unknown")
+            patch = f.get("patch", "")
+            additions = f.get("additions", 0)
+            deletions = f.get("deletions", 0)
+
+            est_tokens = self.estimator.estimate_diff(patch)
+
+            entries.append(FileEntry(
+                path=path,
+                additions=additions,
+                deletions=deletions,
+                estimated_tokens=est_tokens,
+                diff_content=patch[:2000],
+                language=self._detect_language(path),
+            ))
+
+        logger.info(f"Converted {len(entries)} files to FileEntry objects")
+        return entries
 
     def plan_from_files(
         self,

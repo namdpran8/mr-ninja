@@ -63,6 +63,32 @@ class FilePriority(int, enum.Enum):
     GENERATED = 6
 
 
+class Platform(str, enum.Enum):
+    """Supported source-code hosting platforms."""
+    GITLAB = "gitlab"
+    GITHUB = "github"
+
+    @classmethod
+    def detect_from_url(cls, url: str) -> "Platform":
+        """Detect the platform from a URL.
+
+        Args:
+            url: Any URL belonging to the platform (e.g. MR/PR link).
+
+        Returns:
+            The detected Platform.
+
+        Raises:
+            ValueError: If the platform cannot be determined.
+        """
+        lower = url.lower()
+        if "github.com" in lower:
+            return cls.GITHUB
+        if "gitlab" in lower:
+            return cls.GITLAB
+        raise ValueError(f"Cannot detect platform from URL: {url}")
+
+
 # ---------------------------------------------------------------------------
 # File-level models
 # ---------------------------------------------------------------------------
@@ -233,6 +259,7 @@ class AnalysisReport(BaseModel):
     findings: list[Finding] = Field(default_factory=list)
     unresolved_questions: list[str] = Field(default_factory=list)
     chunk_summaries: list[ChunkSummary] = Field(default_factory=list)
+    platform: Platform = Field(Platform.GITLAB)
     overall_risk: Severity = Field(Severity.INFO)
     processing_time_seconds: float = Field(0.0)
     generated_at: datetime = Field(
@@ -279,6 +306,10 @@ class AnalyzeRequest(BaseModel):
     mr_iid: int = Field(0, ge=0, description="MR internal ID")
     gitlab_url: str = Field("https://gitlab.com", description="GitLab instance URL")
     gitlab_token: str = Field("", description="GitLab private token")
+    github_repo: str = Field("", description="GitHub repo as owner/repo")
+    github_pr: int = Field(0, ge=0, description="GitHub pull request number")
+    github_url: str = Field("https://github.com", description="GitHub instance URL")
+    github_token: str = Field("", description="GitHub personal access token")
     max_chunk_tokens: int = Field(70_000, ge=10_000)
     post_comment: bool = Field(True, description="Post results as MR comment")
 

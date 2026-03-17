@@ -26,7 +26,9 @@ from mr_ninja.core.models import (
     AnalyzeRequest,
     AnalyzeResponse,
     HealthResponse,
+    Platform,
 )
+from mr_ninja.github.github_client import GitHubClient
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -81,56 +83,102 @@ async def health_check():
 
 @app.post("/analyze", response_model=AnalyzeResponse, tags=["Analysis"])
 async def analyze_mr(request: AnalyzeRequest):
-    """Analyze a GitLab merge request.
+    """Analyze a GitLab merge request or GitHub pull request.
 
-    Accepts an MR URL or project_id + mr_iid, fetches the diffs,
-    chunks them, runs specialist agents on each chunk, and returns
-    an aggregated analysis report.
+    Accepts an MR/PR URL or project identifiers + MR/PR number,
+    fetches the diffs, chunks them, runs specialist agents on each
+    chunk, and returns an aggregated analysis report.
 
-    The analysis is performed synchronously — for very large MRs,
+    The analysis is performed synchronously — for very large MRs/PRs,
     this may take 30-60 seconds.
     """
-    logger.info(f"Received analysis request: {request.mr_url or request.project_id}")
+    logger.info(f"Received analysis request: {request.mr_url or request.project_id or request.github_repo}")
 
     # Use env vars as defaults if not provided in request
     gitlab_token = request.gitlab_token or os.getenv("GITLAB_TOKEN", "")
     gitlab_url = request.gitlab_url or os.getenv("GITLAB_URL", "https://gitlab.com")
+    github_token = request.github_token or os.getenv("GITHUB_TOKEN", "")
 
-    if not gitlab_token:
+    # --- Determine platform ------------------------------------------------
+    platform = None
+    if request.mr_url:
+        try:
+            platform = Platform.detect_from_url(request.mr_url)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot detect platform from URL: {request.mr_url}",
+            )
+    elif request.github_repo and request.github_pr:
+        platform = Platform.GITHUB
+    elif request.project_id and request.mr_iid:
+        platform = Platform.GITLAB
+    else:
         raise HTTPException(
             status_code=400,
-            detail="gitlab_token is required (or set GITLAB_TOKEN env var)",
+            detail=(
+                "Provide either mr_url, "
+                "project_id + mr_iid (GitLab), "
+                "or github_repo + github_pr (GitHub)"
+            ),
         )
 
-    if not request.mr_url and (not request.project_id or not request.mr_iid):
+    # --- Validate token for platform ---------------------------------------
+    if platform is Platform.GITHUB and not github_token:
         raise HTTPException(
             status_code=400,
-            detail="Provide either mr_url or both project_id and mr_iid",
+            detail="github_token is required for GitHub PRs (or set GITHUB_TOKEN env var)",
+        )
+    if platform is Platform.GITLAB and not gitlab_token:
+        raise HTTPException(
+            status_code=400,
+            detail="gitlab_token is required for GitLab MRs (or set GITLAB_TOKEN env var)",
         )
 
     orchestrator = Orchestrator(
         gitlab_url=gitlab_url,
         gitlab_token=gitlab_token,
+        github_token=github_token,
         max_chunk_tokens=request.max_chunk_tokens,
         post_comments=request.post_comment,
     )
 
-    updated_request = AnalyzeRequest(
-        mr_url=request.mr_url,
-        project_id=request.project_id,
-        mr_iid=request.mr_iid,
-        gitlab_url=gitlab_url,
-        gitlab_token=gitlab_token,
-        max_chunk_tokens=request.max_chunk_tokens,
-        post_comment=request.post_comment,
-    )
+    # --- Route to the right analysis method --------------------------------
+    try:
+        if request.mr_url:
+            report = orchestrator.analyze_from_url(request.mr_url)
+        elif platform is Platform.GITHUB:
+            owner, repo = GitHubClient.parse_repo_string(request.github_repo)
+            report = orchestrator.analyze_pr(owner, repo, request.github_pr)
+        else:
+            report = orchestrator.analyze_mr(request.project_id, request.mr_iid)
 
-    response = orchestrator.analyze_request(updated_request)
+        # Render markdown
+        from mr_ninja.agents.chunk_planner import ChunkPlanner
+        planner = ChunkPlanner()
+        plan = planner.plan_from_files(
+            [],
+            mr_id=report.mr_id,
+            mr_title=report.mr_title,
+        )
+        markdown = orchestrator.aggregator.render_markdown(
+            plan, report.processing_time_seconds
+        )
 
-    if response.status == "error":
-        raise HTTPException(status_code=500, detail=response.error)
+        return AnalyzeResponse(
+            status="ok",
+            mr_id=report.mr_id,
+            chunks_processed=report.chunks_processed,
+            total_findings=len(report.findings),
+            critical_findings=report.critical_count,
+            overall_risk=report.overall_risk.value,
+            report_markdown=markdown,
+            processing_time_seconds=report.processing_time_seconds,
+        )
 
-    return response
+    except Exception as e:
+        logger.error(f"Analysis failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/demo", response_model=AnalyzeResponse, tags=["Demo"])

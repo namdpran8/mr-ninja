@@ -33,8 +33,10 @@ from mr_ninja.core.models import (
     AnalyzeResponse,
     ChunkPlan,
     FileEntry,
+    Platform,
 )
 from mr_ninja.core.token_estimator import TokenEstimator
+from mr_ninja.github.github_client import GitHubClient
 from mr_ninja.gitlab.gitlab_client import GitLabClient
 
 logger = logging.getLogger("mr_ninja.orchestrator")
@@ -63,6 +65,8 @@ class Orchestrator:
         self,
         gitlab_url: str = "https://gitlab.com",
         gitlab_token: str = "",
+        github_url: str = "https://api.github.com",
+        github_token: str = "",
         max_chunk_tokens: int = 70_000,
         post_comments: bool = True,
         use_duo_agents: bool = False,
@@ -71,6 +75,11 @@ class Orchestrator:
         self.gitlab_client = GitLabClient(
             gitlab_url=gitlab_url, token=gitlab_token
         )
+        self.github_client: GitHubClient | None = None
+        if github_token:
+            self.github_client = GitHubClient(
+                base_url=github_url, token=github_token
+            )
         self.token_estimator = TokenEstimator()
         self.chunking_engine = ChunkingEngine(
             target_tokens=max_chunk_tokens
@@ -79,6 +88,7 @@ class Orchestrator:
         # Agent components
         self.planner = ChunkPlanner(
             gitlab_client=self.gitlab_client,
+            github_client=self.github_client,
             chunking_engine=self.chunking_engine,
             token_estimator=self.token_estimator,
         )
@@ -90,6 +100,8 @@ class Orchestrator:
         self.post_comments = post_comments
         self.gitlab_url = gitlab_url
         self.gitlab_token = gitlab_token
+        self.github_url = github_url
+        self.github_token = github_token
 
     def analyze_mr(
         self,
@@ -131,6 +143,85 @@ class Orchestrator:
             self._post_final_report(project_id, mr_iid, markdown)
 
         return report
+
+    def analyze_pr(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+    ) -> AnalysisReport:
+        """Analyze a GitHub pull request end-to-end.
+
+        Args:
+            owner: Repository owner.
+            repo: Repository name.
+            pr_number: Pull request number.
+
+        Returns:
+            Complete AnalysisReport with all findings.
+
+        Raises:
+            RuntimeError: If no GitHub client has been configured.
+        """
+        if self.github_client is None:
+            raise RuntimeError("GitHub client not configured")
+
+        start = time.time()
+
+        logger.info(f"Starting PR analysis: {owner}/{repo} #{pr_number}")
+
+        # Post a WIP comment on the PR
+        if self.post_comments:
+            self._post_github_wip_comment(owner, repo, pr_number)
+
+        # Phase 1: Plan
+        logger.info("Phase 1: Building chunk plan...")
+        plan = self.planner.plan_from_github_pr(owner, repo, pr_number)
+        self.planner.print_plan(plan)
+
+        # Phase 2-4: Process, Summarize, Aggregate
+        report = self._execute_plan(plan, start)
+        report.platform = Platform.GITHUB
+
+        # Phase 5: Post final report
+        if self.post_comments:
+            markdown = self.aggregator.render_markdown(
+                plan, processing_time=report.processing_time_seconds
+            )
+            self._post_github_final_report(owner, repo, pr_number, markdown)
+
+        return report
+
+    def analyze_from_url(self, url: str) -> AnalysisReport:
+        """Analyze an MR or PR from its full URL.
+
+        Detects whether the URL is GitHub or GitLab, then routes to
+        the appropriate method.
+
+        Args:
+            url: Full MR/PR URL.
+
+        Returns:
+            Complete AnalysisReport.
+        """
+        platform = Platform.detect_from_url(url)
+
+        if platform is Platform.GITHUB:
+            base, owner, repo, pr_number = GitHubClient.parse_pr_url(url)
+
+            # (Re-)initialise the GitHub client when needed
+            if self.github_client is None:
+                self.github_client = GitHubClient(
+                    base_url=f"{base.rstrip('/')}/api/v3"
+                    if "api.github.com" not in base else "https://api.github.com",
+                    token=self.github_token,
+                )
+                self.planner.github = self.github_client
+
+            return self.analyze_pr(owner, repo, pr_number)
+
+        # GitLab
+        return self.analyze_mr_from_url(url)
 
     def analyze_mr_from_url(self, mr_url: str) -> AnalysisReport:
         """Analyze an MR from its full URL.
@@ -344,5 +435,43 @@ class Orchestrator:
                 project_id, mr_iid, markdown
             )
             logger.info("Posted final report on MR")
+        except Exception as e:
+            logger.warning(f"Could not post final report: {e}")
+
+    # ------------------------------------------------------------------
+    # GitHub comment helpers
+    # ------------------------------------------------------------------
+
+    def _post_github_wip_comment(
+        self, owner: str, repo: str, pr_number: int
+    ) -> None:
+        """Post a WIP/in-progress comment on a GitHub PR."""
+        try:
+            if self.github_client is not None:
+                self.github_client.create_pull_request_comment(
+                    owner,
+                    repo,
+                    pr_number,
+                    "Mr Ninja orchestrator running — analyzing PR in chunks. "
+                    "Full report will be posted shortly.",
+                )
+                logger.info("Posted WIP comment on PR")
+        except Exception as e:
+            logger.warning(f"Could not post WIP comment: {e}")
+
+    def _post_github_final_report(
+        self,
+        owner: str,
+        repo: str,
+        pr_number: int,
+        markdown: str,
+    ) -> None:
+        """Post the final analysis report as a GitHub PR comment."""
+        try:
+            if self.github_client is not None:
+                self.github_client.create_pull_request_comment(
+                    owner, repo, pr_number, markdown
+                )
+                logger.info("Posted final report on PR")
         except Exception as e:
             logger.warning(f"Could not post final report: {e}")

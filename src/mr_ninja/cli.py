@@ -4,7 +4,7 @@ mr_ninja.cli
 Command-line interface for Mr Ninja.
 
 Usage:
-    mr-ninja analyze <mr-url>          Analyze a GitLab merge request
+    mr-ninja analyze <url>             Analyze a GitLab MR or GitHub PR
     mr-ninja analyze --project <id> --mr <iid>
     mr-ninja demo [--files N] [--output FILE]
     mr-ninja serve [--host HOST] [--port PORT]
@@ -35,32 +35,69 @@ def _setup_logging(verbose: bool = False) -> None:
 # -----------------------------------------------------------------------
 
 def cmd_analyze(args: argparse.Namespace) -> int:
-    """Analyze a GitLab merge request."""
+    """Analyze a GitLab merge request or GitHub pull request."""
     from mr_ninja.agents.orchestrator import Orchestrator
+    from mr_ninja.core.models import Platform
+    from mr_ninja.github.github_client import GitHubClient
 
     _setup_logging(args.verbose)
 
     gitlab_token = args.token or os.getenv("GITLAB_TOKEN", "")
     gitlab_url = args.gitlab_url or os.getenv("GITLAB_URL", "https://gitlab.com")
+    github_token = args.github_token or os.getenv("GITHUB_TOKEN", "")
 
-    if not gitlab_token:
-        print("Error: GitLab token is required.")
-        print("  Set GITLAB_TOKEN environment variable or use --token.")
-        return 1
+    # --- Determine platform -------------------------------------------------
+    platform = None
+    if args.mr_url:
+        try:
+            platform = Platform.detect_from_url(args.mr_url)
+        except ValueError:
+            print(f"Error: cannot detect platform from URL: {args.mr_url}")
+            return 1
+    elif github_token and not gitlab_token:
+        platform = Platform.GITHUB
+    else:
+        platform = Platform.GITLAB
+
+    # --- Validate token for platform ----------------------------------------
+    if platform is Platform.GITHUB:
+        if not github_token:
+            print("Error: GitHub token is required for GitHub URLs.")
+            print("  Set GITHUB_TOKEN environment variable or use --github-token.")
+            return 1
+        if gitlab_token and not github_token:
+            print("Error: detected GitHub URL but only a GitLab token was provided.")
+            print("  Use --github-token or set GITHUB_TOKEN.")
+            return 1
+    else:
+        if not gitlab_token:
+            print("Error: GitLab token is required for GitLab URLs.")
+            print("  Set GITLAB_TOKEN environment variable or use --token.")
+            return 1
+        if github_token and not gitlab_token:
+            print("Error: detected GitLab URL but only a GitHub token was provided.")
+            print("  Use --token or set GITLAB_TOKEN.")
+            return 1
 
     orchestrator = Orchestrator(
         gitlab_url=gitlab_url,
         gitlab_token=gitlab_token,
+        github_token=github_token,
         max_chunk_tokens=args.max_tokens,
         post_comments=args.post_comment,
     )
 
+    # --- Route to the right analysis method ---------------------------------
     if args.mr_url:
-        report = orchestrator.analyze_mr_from_url(args.mr_url)
+        report = orchestrator.analyze_from_url(args.mr_url)
     elif args.project and args.mr:
-        report = orchestrator.analyze_mr(args.project, args.mr)
+        if platform is Platform.GITHUB:
+            owner, repo = GitHubClient.parse_repo_string(args.project)
+            report = orchestrator.analyze_pr(owner, repo, args.mr)
+        else:
+            report = orchestrator.analyze_mr(args.project, args.mr)
     else:
-        print("Error: provide an MR URL or both --project and --mr.")
+        print("Error: provide a URL or both --project and --mr.")
         return 1
 
     # Render and print report
@@ -131,7 +168,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mr-ninja",
         description="Mr Ninja -- Large Context Orchestrator for GitLab Duo",
-        epilog="https://gitlab.com/your-group/mr-ninja",
+        # epilog="https://gitlab.com/your-group/mr-ninja", #
     )
     parser.add_argument(
         "--version", action="version", version=f"mr-ninja {__version__}"
@@ -142,23 +179,26 @@ def build_parser() -> argparse.ArgumentParser:
     # -- analyze ---------------------------------------------------------
     p_analyze = subparsers.add_parser(
         "analyze",
-        help="Analyze a GitLab merge request",
-        description="Fetch an MR, chunk it, run specialist agents, and report findings.",
+        help="Analyze a GitLab MR or GitHub PR",
+        description="Fetch an MR/PR, chunk it, run specialist agents, and report findings.",
     )
     p_analyze.add_argument(
         "mr_url",
         nargs="?",
         default="",
-        help="Full GitLab MR URL (e.g. https://gitlab.com/group/project/-/merge_requests/42)",
+        help="Full MR/PR URL (GitLab or GitHub)",
     )
     p_analyze.add_argument(
-        "--project", default="", help="GitLab project ID or path"
+        "--project", default="", help="Project path (GitLab) or owner/repo (GitHub)"
     )
     p_analyze.add_argument(
-        "--mr", type=int, default=0, help="Merge request IID"
+        "--mr", type=int, default=0, help="MR IID or PR number"
     )
     p_analyze.add_argument(
         "--token", default="", help="GitLab private token (or set GITLAB_TOKEN)"
+    )
+    p_analyze.add_argument(
+        "--github-token", default="", help="GitHub token (or set GITHUB_TOKEN)"
     )
     p_analyze.add_argument(
         "--gitlab-url", default="", help="GitLab instance URL (default: https://gitlab.com)"
