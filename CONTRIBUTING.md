@@ -3,7 +3,7 @@
 ## Development Setup
 
 ```bash
-git clone https://gitlab.com/your-group/mr-ninja.git
+git clone https://gitlab.com/namdpran8/mr-ninja.git
 cd mr-ninja
 pip install -e ".[dev]"
 ```

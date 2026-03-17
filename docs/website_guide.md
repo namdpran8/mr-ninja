@@ -6,7 +6,7 @@ This guide explains how to customize, preview, and deploy the Mr Ninja website.
 
 - **Live Site**: https://your-group.gitlab.io/mr-ninja/
 - **Documentation**: https://your-group.gitlab.io/mr-ninja/docs.html
-- **GitLab Pages Settings**: https://gitlab.com/your-group/mr-ninja/-/pages
+- **GitLab Pages Settings**: https://gitlab.com/namdpran8/mr-ninja.git/-/pages
 
 ## Local Preview
 
@@ -144,8 +144,8 @@ The GitLab CI pipeline will:
 3. Deploy to GitLab Pages
 
 **Check deployment status:**
-- Pipeline: https://gitlab.com/your-group/mr-ninja/-/pipelines
-- Pages: https://gitlab.com/your-group/mr-ninja/-/pages
+- Pipeline: https://gitlab.com/namdpran8/mr-ninja.git/-/pipelines
+- Pages: https://gitlab.com/namdpran8/mr-ninja.git/-/pages
 
 ### Manual Testing Before Deploy
 
@@ -316,7 +316,7 @@ Add to `<head>` in HTML files:
 ## Need Help?
 
 - **GitLab Pages Docs**: https://docs.gitlab.com/ee/user/project/pages/
-- **Open an Issue**: https://gitlab.com/your-group/mr-ninja/-/issues
+- **Open an Issue**: https://gitlab.com/namdpran8/mr-ninja.git/-/issues
 - **Community**: GitLab community forum
 
 ---

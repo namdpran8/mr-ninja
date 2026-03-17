@@ -168,7 +168,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mr-ninja",
         description="Mr Ninja -- Large Context Orchestrator for GitLab Duo",
-        # epilog="https://gitlab.com/your-group/mr-ninja", #
+        # epilog="https://gitlab.com/namdpran8/mr-ninja.git", #
     )
     parser.add_argument(
         "--version", action="version", version=f"mr-ninja {__version__}"
